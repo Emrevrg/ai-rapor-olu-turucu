@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { ReportSection } from '../types';
+import type { ReportSection, GenerationOptions } from '../types';
 
 function getAiClient(): GoogleGenAI {
   const userApiKey = localStorage.getItem('user_api_key');
@@ -11,18 +11,38 @@ function getAiClient(): GoogleGenAI {
   return new GoogleGenAI({ apiKey });
 }
 
-function createPlaceholderImage(title: string): string {
+function createPlaceholderImage(title: string, prompt: string): string {
     const bgColor = '#374151'; // dark:bg-gray-700
     const textColor = '#d1d5db'; // dark:text-gray-300
     const cleanTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    
+    const cleanPrompt = prompt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const maxCharsPerLine = 75;
+    const words = cleanPrompt.split(' ');
+    const lines = [];
+    let currentLine = words[0] || '';
+
+    for (let i = 1; i < words.length; i++) {
+        if (currentLine.length + words[i].length + 1 <= maxCharsPerLine) {
+            currentLine += ` ${words[i]}`;
+        } else {
+            lines.push(currentLine);
+            currentLine = words[i];
+        }
+    }
+    lines.push(currentLine);
+
+    const promptTSpans = lines.map((line, index) => `<tspan x="50%" dy="${index === 0 ? '2.5em' : '1.5em'}">${line}</tspan>`).join('');
+
     const svg = `<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" style="background-color:${bgColor};">
-        <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="60px" fill="${textColor}" font-weight="bold">${cleanTitle}</text>
-        <text x="50%" y="50%" dy="1.5em" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24px" fill="${textColor}" opacity="0.7">Görsel oluşturulamadı</text>
+        <text x="50%" y="40%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="60px" fill="${textColor}" font-weight="bold">${cleanTitle}</text>
+        <text x="50%" y="40%" dy="1.5em" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24px" fill="${textColor}" opacity="0.7">Görsel oluşturulamadı</text>
+        <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="16px" fill="${textColor}" opacity="0.6">
+            <tspan x="50%" dy="0em" font-weight="bold">Kullanılan Prompt:</tspan>
+            ${promptTSpans}
+        </text>
     </svg>`;
     
-    // The built-in `btoa` function fails on strings containing characters outside the Latin1 range (e.g., Turkish characters).
-    // To correctly encode UTF-8 strings to Base64, we use a common workaround to convert the string to a format `btoa` can handle.
     const base64EncodedSvg = btoa(
         encodeURIComponent(svg).replace(/%([0-9A-F]{2})/g, (match, p1) =>
             String.fromCharCode(parseInt(p1, 16))
@@ -32,12 +52,11 @@ function createPlaceholderImage(title: string): string {
     return `data:image/svg+xml;base64,${base64EncodedSvg}`;
 }
 
-
-export type ReportLength = 'short' | 'normal' | 'long';
-
-export interface GenerationOptions {
-    includeContributors: boolean;
-    length: ReportLength;
+export interface ImageGenerationResult {
+    imageUrl: string;
+    imageError: string | null;
+    imagePrompt: string;
+    isPlaceholder: boolean;
 }
 
 export async function generateReportOutline(topic: string): Promise<string[]> {
@@ -118,11 +137,10 @@ export async function generateSectionContent(topic: string, sectionTitle: string
     }
 }
 
-export async function generateSectionImage(topic: string, sectionTitle: string): Promise<[string, string | null]> {
+export async function generateSectionImage(topic: string, sectionTitle: string): Promise<ImageGenerationResult> {
+    const prompt = `An impressive, professional, photorealistic, cinematic image for a report on the topic of '${topic} - ${sectionTitle}'. The image should be abstract and conceptual, avoiding text or visible people.`;
     try {
         const ai = getAiClient();
-        const prompt = `An impressive, professional, photorealistic, cinematic image for a report on the topic of '${topic} - ${sectionTitle}'. The image should be abstract and conceptual, avoiding text or visible people.`;
-        
         const response = await ai.models.generateImages({
             model: 'imagen-3.0-generate-002',
             prompt: prompt,
@@ -135,17 +153,32 @@ export async function generateSectionImage(topic: string, sectionTitle: string):
 
         if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
             const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-            return [`data:image/jpeg;base64,${base64ImageBytes}`, null];
+            return {
+                imageUrl: `data:image/jpeg;base64,${base64ImageBytes}`,
+                imageError: null,
+                imagePrompt: prompt,
+                isPlaceholder: false
+            };
         }
         
         const errorMessage = "API yanıt verdi ancak görsel verisi bulunamadı.";
         console.error(`'${sectionTitle}' için görsel oluşturulamadı. Hata: ${errorMessage}`);
-        return [createPlaceholderImage(sectionTitle), errorMessage];
+        return {
+            imageUrl: createPlaceholderImage(sectionTitle, prompt),
+            imageError: errorMessage,
+            imagePrompt: prompt,
+            isPlaceholder: true
+        };
 
     } catch (error) {
         const originalErrorMessage = error instanceof Error ? error.message : String(error);
         console.error(`'${sectionTitle}' için görsel oluşturulamadı. Hata: ${originalErrorMessage}.`);
-        return [createPlaceholderImage(sectionTitle), originalErrorMessage];
+        return {
+            imageUrl: createPlaceholderImage(sectionTitle, prompt),
+            imageError: originalErrorMessage,
+            imagePrompt: prompt,
+            isPlaceholder: true
+        };
     }
 }
 
@@ -156,9 +189,14 @@ export async function generateFullSection(topic: string, sectionTitle: string, o
             generateSectionImage(topic, sectionTitle)
         ]);
 
-        const [imageUrl, imageError] = imageResult;
-        const section: ReportSection = { title: sectionTitle, content, imageUrl };
-        return [section, imageError];
+        const section: ReportSection = { 
+            title: sectionTitle, 
+            content, 
+            imageUrl: imageResult.imageUrl,
+            isPlaceholder: imageResult.isPlaceholder,
+            imagePrompt: imageResult.imagePrompt
+        };
+        return [section, imageResult.imageError];
     } catch (error) {
         console.error(`Error generating full section for "${sectionTitle}":`, error);
         throw error;

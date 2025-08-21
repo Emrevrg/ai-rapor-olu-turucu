@@ -1,6 +1,6 @@
 import React, { useState, useCallback, Fragment, useRef, useEffect } from 'react';
-import type { Report, ReportSection } from './types';
-import { generateReportOutline, generateFullSection, GenerationOptions, ReportLength } from './services/geminiService';
+import type { Report, ReportSection, GenerationOptions, ReportLength, OutputFormat } from './types';
+import { generateReportOutline, generateFullSection } from './services/geminiService';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -63,20 +63,23 @@ const InfoIcon = ({ className = "h-6 w-6 mr-2" }) => (
         <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
 );
+const CopyIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+);
 
 
 // --- COMPONENTS ---
 const GenerationForm: React.FC<{
-    onGenerate: (topic: string, options: GenerationOptions) => void;
+    onGenerate: (topic: string) => void;
     isLoading: boolean;
     onReset: () => void;
     reportExists: boolean;
-}> = ({ onGenerate, isLoading, onReset, reportExists }) => {
+    options: GenerationOptions;
+    setOptions: React.Dispatch<React.SetStateAction<GenerationOptions>>;
+}> = ({ onGenerate, isLoading, onReset, reportExists, options, setOptions }) => {
     const [topic, setTopic] = useState('');
-    const [options, setOptions] = useState<GenerationOptions>({
-        includeContributors: false,
-        length: 'normal',
-    });
     const inputRef = useRef<HTMLInputElement>(null);
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -88,11 +91,11 @@ const GenerationForm: React.FC<{
             return;
         }
         if (topic.trim() && !isLoading) {
-            onGenerate(topic, options);
+            onGenerate(topic);
         }
     };
 
-    const handleOptionChange = (key: keyof GenerationOptions, value: boolean | ReportLength) => {
+    const handleOptionChange = (key: keyof GenerationOptions, value: boolean | ReportLength | OutputFormat) => {
         setOptions(prev => ({ ...prev, [key]: value }));
     };
 
@@ -120,8 +123,8 @@ const GenerationForm: React.FC<{
             
             <div className={`p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700 transition-opacity duration-300 ${reportExists || isLoading ? 'opacity-50' : ''}`}>
                 <h3 className="text-center font-semibold text-gray-700 dark:text-gray-300 mb-4">Özelleştirme</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-1">
                         <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Rapor Uzunluğu</label>
                         <div className="flex flex-col space-y-2">
                             {(['short', 'normal', 'long'] as ReportLength[]).map(len => (
@@ -131,12 +134,27 @@ const GenerationForm: React.FC<{
                                         disabled={isLoading || reportExists}
                                         className="w-4 h-4 text-cyan-600 bg-gray-100 border-gray-300 focus:ring-cyan-500 dark:focus:ring-cyan-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                                     />
-                                    <span>{len === 'short' ? 'Kısa (Özet)' : len === 'normal' ? 'Normal (Detaylı)' : 'Uzun (Akademik)'}</span>
+                                    <span>{len === 'short' ? 'Kısa' : len === 'normal' ? 'Normal' : 'Uzun'}</span>
                                  </label>
                             ))}
                         </div>
                     </div>
-                     <div>
+                     <div className="md:col-span-1">
+                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Çıktı Formatı</label>
+                         <div className="flex flex-col space-y-2">
+                            {(['pdf', 'word'] as OutputFormat[]).map(format => (
+                                <label key={format} className="flex items-center space-x-2 text-gray-700 dark:text-gray-300 cursor-pointer">
+                                    <input type="radio" name="outputFormat" value={format} checked={options.outputFormat === format}
+                                        onChange={() => handleOptionChange('outputFormat', format)}
+                                        disabled={isLoading || reportExists}
+                                        className="w-4 h-4 text-cyan-600 bg-gray-100 border-gray-300 focus:ring-cyan-500 dark:focus:ring-cyan-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                                    />
+                                    <span>{format === 'pdf' ? 'PDF' : 'Word (.docx)'}</span>
+                                 </label>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="md:col-span-1">
                         <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Ek Seçenekler</label>
                          <label className="flex items-center space-x-2 text-gray-700 dark:text-gray-300 cursor-pointer">
                             <input
@@ -146,7 +164,7 @@ const GenerationForm: React.FC<{
                                 disabled={isLoading || reportExists}
                                 className="w-4 h-4 text-cyan-600 bg-gray-100 border-gray-300 rounded focus:ring-cyan-500 dark:focus:ring-cyan-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                             />
-                            <span>Ana Katkıda Bulunanları Dahil Et</span>
+                            <span>Katkıda Bulunanlar</span>
                         </label>
                     </div>
                 </div>
@@ -170,7 +188,8 @@ const ReportDisplay: React.FC<{
     report: Report; 
     setReport: React.Dispatch<React.SetStateAction<Report | null>>;
     showToast: (message: string) => void;
-}> = ({ report, setReport, showToast }) => {
+    outputFormat: OutputFormat;
+}> = ({ report, setReport, showToast, outputFormat }) => {
     const reportRef = useRef<HTMLDivElement>(null);
     const [isDownloading, setIsDownloading] = useState(false);
 
@@ -195,19 +214,8 @@ const ReportDisplay: React.FC<{
         setIsDownloading(true);
         try {
             const reportElement = reportRef.current;
-
-            // Wait for all images to load before capturing
             const images = Array.from(reportElement.querySelectorAll('img'));
-            const imagePromises = images.map(img => {
-                if (img.complete) return Promise.resolve();
-                return new Promise(resolve => {
-                    img.onload = resolve;
-                    img.onerror = resolve; // Resolve even on error to not block PDF generation
-                });
-            });
-            await Promise.all(imagePromises);
-            
-            // A short delay to ensure rendering is complete after images load
+            await Promise.all(images.map(img => !img.complete ? new Promise(resolve => { img.onload = img.onerror = resolve; }) : Promise.resolve()));
             await new Promise(resolve => setTimeout(resolve, 500));
 
             const isDark = document.documentElement.classList.contains('dark');
@@ -215,14 +223,12 @@ const ReportDisplay: React.FC<{
                 scale: 2,
                 useCORS: true,
                 backgroundColor: isDark ? '#111827' : '#ffffff',
-                allowTaint: true, // Added to potentially help with CORS issues
+                allowTaint: true,
             });
             
-            // Use JPEG for better compression of photographic images and potentially more robust handling
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
             const imgWidth = canvas.width;
             const imgHeight = canvas.height;
             const ratio = pdfWidth / imgWidth;
@@ -232,21 +238,84 @@ const ReportDisplay: React.FC<{
             let position = 0;
 
             pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, canvasHeightInPdf);
-            heightLeft -= pdfHeight;
+            heightLeft -= pdf.internal.pageSize.getHeight();
 
             while (heightLeft > 0) {
-                position = heightLeft - canvasHeightInPdf; // User's original (and correct) logic
+                position = heightLeft - canvasHeightInPdf;
                 pdf.addPage();
                 pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, canvasHeightInPdf);
-                heightLeft -= pdfHeight;
+                heightLeft -= pdf.internal.pageSize.getHeight();
             }
             pdf.save(`${report.topic.replace(/\s/g, '_')}.pdf`);
         } catch (error) {
             console.error("PDF oluşturulurken hata oluştu:", error);
-            alert("PDF oluşturulurken bir hata oluştu. Lütfen konsolu kontrol edin.");
+            showToast("PDF oluşturulurken bir hata oluştu. Lütfen konsolu kontrol edin.");
         } finally {
             setIsDownloading(false);
         }
+    };
+
+    const handleDownloadDocx = async () => {
+        if (!reportRef.current) return;
+        setIsDownloading(true);
+        try {
+            const htmlToDocx = (await import('html-to-docx')).default;
+
+            const inlineStyles = {
+                h1: `font-size: 28px; font-family: Calibri, sans-serif; font-weight: bold; text-align: center; color: #111827; margin-bottom: 8px;`,
+                h1_p: `font-size: 14px; font-family: Calibri, sans-serif; text-align: center; color: #0ea5e9; margin-top: 0;`,
+                h2: `font-size: 22px; font-family: Calibri, sans-serif; font-weight: bold; color: #111827; margin-top: 28px; margin-bottom: 14px; border-bottom: 2px solid #0ea5e9; padding-bottom: 4px;`,
+                img: `max-width: 550px; height: auto; display: block; margin: 16px auto;`,
+                p: `font-size: 12pt; font-family: Calibri, sans-serif; line-height: 1.5; color: #374151;`,
+                toc_h2: `font-size: 20px; font-family: Calibri, sans-serif; font-weight: bold; color: #0891b2; margin-bottom: 16px;`,
+                toc_ul: `list-style-type: decimal; padding-left: 20px;`,
+                toc_li: `font-size: 12pt; font-family: Calibri, sans-serif; color: #374151; margin-bottom: 8px;`
+            };
+    
+            let htmlString = `
+                <h1 style="${inlineStyles.h1}">${report.topic}</h1>
+                <p style="${inlineStyles.h1_p}">Yapay Zeka Tarafından Oluşturulan Detaylı Rapor</p>
+                <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin-top: 32px; margin-bottom: 32px;">
+                    <h2 style="${inlineStyles.toc_h2}">İçindekiler</h2>
+                    <ul style="${inlineStyles.toc_ul}">
+                        ${report.sections.map(s => `<li style="${inlineStyles.toc_li}">${s.title}</li>`).join('')}
+                    </ul>
+                </div>
+                ${report.sections.map(section => `
+                    <div>
+                        <h2 style="${inlineStyles.h2}">${section.title}</h2>
+                        <img src="${section.imageUrl}" alt="${section.title} için görsel" style="${inlineStyles.img}" />
+                        <p style="${inlineStyles.p}">${section.content.replace(/\n/g, '<br />')}</p>
+                    </div>
+                `).join('')}`;
+            
+            const fileBuffer = await htmlToDocx(htmlString, null, {
+                orientation: 'portrait',
+                margins: { top: 720, right: 720, bottom: 720, left: 720 }, // 1 inch margins
+            });
+    
+            const blob = new Blob([fileBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${report.topic.replace(/\s/g, '_')}.docx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+
+        } catch (err) {
+            console.error("Word dosyası oluşturulurken hata oluştu:", err);
+            showToast("Word dosyası oluşturulurken bir hata oluştu.");
+        } finally {
+            setIsDownloading(false);
+        }
+    };
+
+    const handleCopyPrompt = (prompt: string | undefined) => {
+        if (!prompt) return;
+        navigator.clipboard.writeText(prompt)
+            .then(() => showToast("Prompt panoya kopyalandı!"))
+            .catch(err => showToast("Hata: Prompt kopyalanamadı."));
     };
 
     return (
@@ -273,8 +342,17 @@ const ReportDisplay: React.FC<{
                         <Fragment key={index}>
                             <section id={`section-${index}`} className="scroll-mt-20">
                                 <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-4 border-l-4 border-cyan-500 pl-4">{section.title}</h2>
-                                <div className="aspect-w-16 aspect-h-9 mb-6 rounded-lg overflow-hidden shadow-lg">
+                                <div className="relative aspect-w-16 aspect-h-9 mb-6 rounded-lg overflow-hidden shadow-lg">
                                     <img src={section.imageUrl} alt={`${section.title} için görsel`} className="w-full h-full object-cover" />
+                                    {section.isPlaceholder && (
+                                        <button 
+                                            onClick={() => handleCopyPrompt(section.imagePrompt)}
+                                            className="absolute bottom-2 right-2 flex items-center bg-gray-800/60 hover:bg-gray-800/90 text-white text-xs py-1 px-2 rounded-md transition-all backdrop-blur-sm"
+                                        >
+                                            <CopyIcon />
+                                            Prompt'u Kopyala
+                                        </button>
+                                    )}
                                 </div>
                                 <div
                                     contentEditable
@@ -293,14 +371,25 @@ const ReportDisplay: React.FC<{
                 </footer>
             </div>
              <div className="mt-8 text-center">
-                <button
-                    onClick={handleDownloadPdf}
-                    disabled={isDownloading}
-                    className="flex items-center justify-center mx-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
-                >
-                    <DownloadIcon />
-                    {isDownloading ? 'İndiriliyor...' : 'Raporu PDF Olarak İndir'}
-                </button>
+                 {outputFormat === 'pdf' ? (
+                     <button
+                        onClick={handleDownloadPdf}
+                        disabled={isDownloading}
+                        className="flex items-center justify-center mx-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
+                    >
+                        <DownloadIcon />
+                        {isDownloading ? 'İndiriliyor...' : 'Raporu PDF Olarak İndir'}
+                    </button>
+                 ) : (
+                     <button
+                        onClick={handleDownloadDocx}
+                        disabled={isDownloading}
+                        className="flex items-center justify-center mx-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
+                    >
+                        <DownloadIcon />
+                        {isDownloading ? 'İndiriliyor...' : 'Raporu Word Olarak İndir'}
+                    </button>
+                 )}
             </div>
         </div>
     );
@@ -430,6 +519,11 @@ export default function App() {
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [generationOptions, setGenerationOptions] = useState<GenerationOptions>({
+        includeContributors: false,
+        length: 'normal',
+        outputFormat: 'pdf',
+    });
     
     // Load history from localStorage on initial render
     useEffect(() => {
@@ -497,7 +591,7 @@ export default function App() {
         }
     };
 
-    const handleGenerateReport = useCallback(async (topic: string, options: GenerationOptions) => {
+    const handleGenerateReport = useCallback(async (topic: string) => {
         setIsLoading(true);
         setError(null);
         setReport(null);
@@ -523,7 +617,7 @@ export default function App() {
             for (let i = 0; i < outline.length; i++) {
                 const title = outline[i];
                 setLoadingMessage(`'${title}' bölümü oluşturuluyor... (${i + 1}/${outline.length})`);
-                const [section, imageError] = await generateFullSection(topic, title, options);
+                const [section, imageError] = await generateFullSection(topic, title, generationOptions);
                 generatedSections.push(section);
 
                 if (imageError) {
@@ -564,7 +658,7 @@ export default function App() {
             setIsLoading(false);
             setLoadingMessage('');
         }
-    }, [showToast]);
+    }, [showToast, generationOptions]);
 
     const handleReset = useCallback(() => {
         setReport(null);
@@ -619,6 +713,8 @@ export default function App() {
                     isLoading={isLoading}
                     onReset={handleReset}
                     reportExists={!!report}
+                    options={generationOptions}
+                    setOptions={setGenerationOptions}
                 />
                 
                 {isLoading && !report && <LoadingIndicator message={loadingMessage} />}
@@ -630,7 +726,7 @@ export default function App() {
                     </div>
                 )}
                 
-                {report && <ReportDisplay report={report} setReport={setReport} showToast={showToast} />}
+                {report && <ReportDisplay report={report} setReport={setReport} showToast={showToast} outputFormat={generationOptions.outputFormat} />}
             </main>
         </div>
     );
