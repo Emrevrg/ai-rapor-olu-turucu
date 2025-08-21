@@ -98,11 +98,9 @@ export async function generateSectionContent(topic: string, sectionTitle: string
 }
 
 export async function generateSectionImage(topic: string, sectionTitle: string): Promise<string> {
-    const placeholderImageUrl = 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%221280%22%20height%3D%22720%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Crect%20width%3D%221280%22%20height%3D%22720%22%20fill%3D%22%23374151%22%20/%3E%3Ctext%20x%3D%2250%25%22%20y%3D%2250%25%22%20dominant-baseline%3D%22middle%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%20font-size%3D%2248%22%20fill%3D%22%239ca3af%22%3EG%C3%B6rsel%20olu%C5%9Fturulamad%C4%B1%3C/text%3E%3C/svg%3E';
-    
     try {
         const ai = getAiClient();
-        const prompt = `Profesyonel bir rapor için etkileyici bir görsel: '${topic}, ${sectionTitle}'. Fotoğraf gerçekliğinde, sinematik, metin veya insan olmadan.`;
+        const prompt = `An impressive, professional, photorealistic, cinematic image for a report on the topic of '${topic} - ${sectionTitle}'. The image should be abstract and conceptual, avoiding text or visible people.`;
         
         const response = await ai.models.generateImages({
             model: 'imagen-3.0-generate-002',
@@ -114,17 +112,17 @@ export async function generateSectionImage(topic: string, sectionTitle: string):
             },
         });
 
-        if (response.generatedImages && response.generatedImages.length > 0) {
+        if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
             const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
             return `data:image/jpeg;base64,${base64ImageBytes}`;
         }
         
-        console.warn(`No image generated for section "${sectionTitle}", using placeholder.`);
-        return placeholderImageUrl;
+        throw new Error("API yanıt verdi ancak görsel verisi bulunamadı.");
 
     } catch (error) {
         console.error(`Error generating image for section "${sectionTitle}":`, error);
-        return placeholderImageUrl;
+        const originalErrorMessage = error instanceof Error ? error.message : String(error);
+        throw new Error(`'${sectionTitle}' bölümü için görsel oluşturulamadı. Lütfen API anahtarınızı, faturalandırma durumunuzu kontrol edin ve tekrar deneyin. API Hatası: ${originalErrorMessage}`);
     }
 }
 
@@ -137,6 +135,6 @@ export async function generateFullSection(topic: string, sectionTitle: string, o
         return { title: sectionTitle, content, imageUrl };
     } catch (error) {
         console.error(`Error generating full section for "${sectionTitle}":`, error);
-        throw new Error(`Bölüm '${sectionTitle}' oluşturulurken bir hata meydana geldi.`);
+        throw error;
     }
 }
