@@ -21,8 +21,15 @@ function createPlaceholderImage(title: string): string {
         <text x="50%" y="50%" dy="1.5em" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24px" fill="${textColor}" opacity="0.7">Görsel oluşturulamadı</text>
     </svg>`;
     
-    // btoa is available in browser environments
-    return `data:image/svg+xml;base64,${btoa(svg)}`;
+    // The built-in `btoa` function fails on strings containing characters outside the Latin1 range (e.g., Turkish characters).
+    // To correctly encode UTF-8 strings to Base64, we use a common workaround to convert the string to a format `btoa` can handle.
+    const base64EncodedSvg = btoa(
+        encodeURIComponent(svg).replace(/%([0-9A-F]{2})/g, (match, p1) =>
+            String.fromCharCode(parseInt(p1, 16))
+        )
+    );
+    
+    return `data:image/svg+xml;base64,${base64EncodedSvg}`;
 }
 
 
