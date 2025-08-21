@@ -11,6 +11,20 @@ function getAiClient(): GoogleGenAI {
   return new GoogleGenAI({ apiKey });
 }
 
+function createPlaceholderImage(title: string): string {
+    const bgColor = '#374151'; // dark:bg-gray-700
+    const textColor = '#d1d5db'; // dark:text-gray-300
+    const cleanTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    const svg = `<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" style="background-color:${bgColor};">
+        <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="60px" fill="${textColor}" font-weight="bold">${cleanTitle}</text>
+        <text x="50%" y="50%" dy="1.5em" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24px" fill="${textColor}" opacity="0.7">Görsel oluşturulamadı</text>
+    </svg>`;
+    
+    // btoa is available in browser environments
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+}
+
 
 export type ReportLength = 'short' | 'normal' | 'long';
 
@@ -120,9 +134,9 @@ export async function generateSectionImage(topic: string, sectionTitle: string):
         throw new Error("API yanıt verdi ancak görsel verisi bulunamadı.");
 
     } catch (error) {
-        console.error(`Error generating image for section "${sectionTitle}":`, error);
         const originalErrorMessage = error instanceof Error ? error.message : String(error);
-        throw new Error(`'${sectionTitle}' bölümü için görsel oluşturulamadı. Lütfen API anahtarınızı, faturalandırma durumunuzu kontrol edin ve tekrar deneyin. API Hatası: ${originalErrorMessage}`);
+        console.error(`'${sectionTitle}' bölümü için görsel oluşturulamadı. Lütfen API anahtarınızı, faturalandırma durumunuzu kontrol edin. API Hatası: ${originalErrorMessage}. Bir yer tutucu görsel kullanılacak.`);
+        return createPlaceholderImage(sectionTitle);
     }
 }
 

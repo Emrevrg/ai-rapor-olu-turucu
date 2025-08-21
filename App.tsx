@@ -449,9 +449,9 @@ export default function App() {
         localStorage.setItem('theme', theme);
     }, [theme]);
     
-    const showToast = (message: string) => {
+    const showToast = useCallback((message: string) => {
         setToastMessage(message);
-    };
+    }, []);
 
     const toggleTheme = () => {
         setTheme(theme === 'dark' ? 'light' : 'dark');
@@ -524,7 +524,14 @@ export default function App() {
                 
                 setReport(prev => prev ? { ...prev, sections: [...generatedSections] } : null);
             }
-            handleSaveReport({ ...initialReport, sections: generatedSections });
+            
+            const finalReport = { ...initialReport, sections: generatedSections };
+            handleSaveReport(finalReport);
+            
+            const imageGenerationFailed = generatedSections.some(s => s.imageUrl.startsWith('data:image/svg+xml'));
+            if (imageGenerationFailed) {
+                showToast("Görseller oluşturulamadı, yer tutucular kullanıldı.");
+            }
 
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : "Bilinmeyen bir hata oluştu.";
@@ -534,7 +541,7 @@ export default function App() {
             setIsLoading(false);
             setLoadingMessage('');
         }
-    }, []);
+    }, [showToast]);
 
     const handleReset = useCallback(() => {
         setReport(null);
