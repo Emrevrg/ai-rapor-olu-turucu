@@ -118,7 +118,7 @@ export async function generateSectionContent(topic: string, sectionTitle: string
     }
 }
 
-export async function generateSectionImage(topic: string, sectionTitle: string): Promise<string> {
+export async function generateSectionImage(topic: string, sectionTitle: string): Promise<[string, string | null]> {
     try {
         const ai = getAiClient();
         const prompt = `An impressive, professional, photorealistic, cinematic image for a report on the topic of '${topic} - ${sectionTitle}'. The image should be abstract and conceptual, avoiding text or visible people.`;
@@ -135,25 +135,30 @@ export async function generateSectionImage(topic: string, sectionTitle: string):
 
         if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
             const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-            return `data:image/jpeg;base64,${base64ImageBytes}`;
+            return [`data:image/jpeg;base64,${base64ImageBytes}`, null];
         }
         
-        throw new Error("API yanıt verdi ancak görsel verisi bulunamadı.");
+        const errorMessage = "API yanıt verdi ancak görsel verisi bulunamadı.";
+        console.error(`'${sectionTitle}' için görsel oluşturulamadı. Hata: ${errorMessage}`);
+        return [createPlaceholderImage(sectionTitle), errorMessage];
 
     } catch (error) {
         const originalErrorMessage = error instanceof Error ? error.message : String(error);
-        console.error(`'${sectionTitle}' bölümü için görsel oluşturulamadı. Lütfen API anahtarınızı, faturalandırma durumunuzu kontrol edin. API Hatası: ${originalErrorMessage}. Bir yer tutucu görsel kullanılacak.`);
-        return createPlaceholderImage(sectionTitle);
+        console.error(`'${sectionTitle}' için görsel oluşturulamadı. Hata: ${originalErrorMessage}.`);
+        return [createPlaceholderImage(sectionTitle), originalErrorMessage];
     }
 }
 
-export async function generateFullSection(topic: string, sectionTitle: string, options: GenerationOptions): Promise<ReportSection> {
+export async function generateFullSection(topic: string, sectionTitle: string, options: GenerationOptions): Promise<[ReportSection, string | null]> {
     try {
-        const [content, imageUrl] = await Promise.all([
+        const [content, imageResult] = await Promise.all([
             generateSectionContent(topic, sectionTitle, options),
             generateSectionImage(topic, sectionTitle)
         ]);
-        return { title: sectionTitle, content, imageUrl };
+
+        const [imageUrl, imageError] = imageResult;
+        const section: ReportSection = { title: sectionTitle, content, imageUrl };
+        return [section, imageError];
     } catch (error) {
         console.error(`Error generating full section for "${sectionTitle}":`, error);
         throw error;

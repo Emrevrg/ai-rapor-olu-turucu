@@ -58,8 +58,8 @@ const CloseIcon = () => (
         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
     </svg>
 );
-const InfoIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+const InfoIcon = ({ className = "h-6 w-6 mr-2" }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
 );
@@ -132,7 +132,7 @@ const GenerationForm: React.FC<{
                                         className="w-4 h-4 text-cyan-600 bg-gray-100 border-gray-300 focus:ring-cyan-500 dark:focus:ring-cyan-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
                                     />
                                     <span>{len === 'short' ? 'Kısa (Özet)' : len === 'normal' ? 'Normal (Detaylı)' : 'Uzun (Akademik)'}</span>
-                                </label>
+                                 </label>
                             ))}
                         </div>
                     </div>
@@ -403,14 +403,17 @@ const HistoryPanel: React.FC<{
 
 const Toast: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
     useEffect(() => {
-        const timer = setTimeout(onClose, 3000);
+        const timer = setTimeout(onClose, 8000);
         return () => clearTimeout(timer);
     }, [onClose]);
 
     return (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center bg-blue-100 dark:bg-blue-900/80 border border-blue-400 dark:border-blue-600 text-blue-800 dark:text-blue-200 p-3 rounded-lg shadow-lg animate-fade-in-down">
-            <InfoIcon />
-            <span>{message}</span>
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-start bg-blue-100 dark:bg-blue-900/80 border border-blue-400 dark:border-blue-600 text-blue-800 dark:text-blue-200 p-4 rounded-lg shadow-lg animate-fade-in-down max-w-lg w-auto">
+            <InfoIcon className="h-6 w-6 mr-3 flex-shrink-0" />
+            <span className="flex-grow mr-4">{message}</span>
+            <button onClick={onClose} className="-mt-1 -mr-1 p-1 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 flex-shrink-0">
+                <CloseIcon />
+            </button>
         </div>
     );
 };
@@ -516,11 +519,16 @@ export default function App() {
             setReport(initialReport);
 
             const generatedSections: ReportSection[] = [];
+            const imageGenerationErrors: string[] = [];
             for (let i = 0; i < outline.length; i++) {
                 const title = outline[i];
                 setLoadingMessage(`'${title}' bölümü oluşturuluyor... (${i + 1}/${outline.length})`);
-                const section = await generateFullSection(topic, title, options);
+                const [section, imageError] = await generateFullSection(topic, title, options);
                 generatedSections.push(section);
+
+                if (imageError) {
+                    imageGenerationErrors.push(imageError);
+                }
                 
                 setReport(prev => prev ? { ...prev, sections: [...generatedSections] } : null);
             }
@@ -528,9 +536,24 @@ export default function App() {
             const finalReport = { ...initialReport, sections: generatedSections };
             handleSaveReport(finalReport);
             
-            const imageGenerationFailed = generatedSections.some(s => s.imageUrl.startsWith('data:image/svg+xml'));
-            if (imageGenerationFailed) {
-                showToast("Görseller oluşturulamadı, yer tutucular kullanıldı.");
+            if (imageGenerationErrors.length > 0) {
+                const firstError = imageGenerationErrors[0];
+                let displayError = firstError;
+
+                try {
+                    const errorJson = JSON.parse(firstError);
+                    if (errorJson.error && errorJson.error.message) {
+                        displayError = errorJson.error.message;
+                    }
+                } catch (e) { /* Not a JSON error, use as is. */ }
+                
+                let userMessage = `Görseller oluşturulamadı. Hata: ${displayError}`;
+                if (displayError.toLowerCase().includes('billing')) {
+                    userMessage = "Görseller oluşturulamadı: Lütfen API anahtarınızın faturalandırmasının etkin olduğundan emin olun. Yer tutucular kullanıldı."
+                } else if (displayError.toLowerCase().includes('api key not valid')) {
+                    userMessage = "Görseller oluşturulamadı: API anahtarınız geçersiz görünüyor. Lütfen ayarları kontrol edin."
+                }
+                showToast(userMessage);
             }
 
         } catch (err) {
